@@ -6,12 +6,22 @@ from groq import Groq
 st.set_page_config(page_title="Консалтинг Автоматизация", layout="wide")
 st.title("🧠 Система консалтинговой компании с ИИ-агентами")
 
-# Инициализация клиента Groq (ключ хранится в секретах Streamlit Cloud)
-try:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-except KeyError:
-    st.error("API ключ Groq не найден. Добавьте его в секреты Streamlit Cloud (GROQ_API_KEY).")
-    st.stop()
+# Храним API‑ключ в сессии, чтобы не вводить при каждом переключении этапа
+if "groq_api_key" not in st.session_state:
+    st.session_state.groq_api_key = ""
+
+# Поле для ввода ключа в боковой панели
+st.sidebar.text_input(
+    "🔑 Введите ваш Groq API Key",
+    type="password",
+    key="api_key_input",
+    on_change=lambda: st.session_state.update(groq_api_key=st.session_state.api_key_input or "")
+)
+
+# Создаём клиент только если ключ введён
+client = None
+if st.session_state.groq_api_key:
+    client = Groq(api_key=st.session_state.groq_api_key)
 
 # ---------- ФОНД СЕССИИ ДЛЯ ДАННЫХ КЛИЕНТА ----------
 if "lead_data" not in st.session_state:
@@ -29,7 +39,9 @@ if "lead_data" not in st.session_state:
 
 # ---------- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЗАПРОСА К LLM ----------
 def ask_agent(system_prompt, user_message, model="llama3-70b-8192"):
-    """Универсальный вызов агента с заданной ролью и сообщением пользователя."""
+    if not client:
+        st.error("Сначала введите API‑ключ Groq в боковой панели.")
+        return None
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message}
@@ -102,17 +114,16 @@ if этап.startswith("1"):
     st.header("🎯 Квалификация лида")
     st.write("Агент-квалификатор поможет вам задать правильные вопросы и оценить потенциал.")
 
-    # Поля для ввода базовой информации
     with st.form("lead_form"):
         компания = st.text_input("Название компании клиента", value=st.session_state.lead_data["компания"])
         контакт = st.text_input("Контактное лицо", value=st.session_state.lead_data["контакт"])
         запрос = st.text_area("Опишите первичный запрос или результаты разговора", value=st.session_state.lead_data["потребности"])
         submitted = st.form_submit_button("Передать агенту на квалификацию")
 
-    if submitted:
-        with st.spinner("Агент анализирует лид..."):
-            user_msg = f"Компания: {компания}. Контакт: {контакт}. Запрос: {запрос}"
-            результат = ask_agent(AGENTS["Квалификатор"]["system_prompt"], user_msg)
+    if submitted and client:
+        user_msg = f"Компания: {компания}. Контакт: {контакт}. Запрос: {запрос}"
+        результат = ask_agent(AGENTS["Квалификатор"]["system_prompt"], user_msg)
+        if результат:
             st.session_state.lead_data["компания"] = компания
             st.session_state.lead_data["контакт"] = контакт
             st.session_state.lead_data["потребности"] = запрос
@@ -136,19 +147,19 @@ elif этап.startswith("2"):
     )
     загруженный_файл = st.file_uploader("Или загрузите файл (txt, csv, pdf пока не поддерживается)", type=["txt"])
 
-    if st.button("Запустить диагностику"):
-        with st.spinner("Агент проводит анализ..."):
-            if загруженный_файл:
-                контент = загруженный_файл.read().decode("utf-8", errors="ignore")
-                контекст += "\n\n[Содержимое файла]:\n" + контент
-            if not контекст.strip():
-                st.warning("Введите описание или загрузите файл.")
-            else:
-                st.session_state.lead_data["диагностика_input"] = контекст
-                результат = ask_agent(AGENTS["Диагност"]["system_prompt"], контекст)
+    if st.button("Запустить диагностику") and client:
+        if загруженный_файл:
+            контент = загруженный_файл.read().decode("utf-8", errors="ignore")
+            контекст += "\n\n[Содержимое файла]:\n" + контент
+        if контекст.strip():
+            st.session_state.lead_data["диагностика_input"] = контекст
+            результат = ask_agent(AGENTS["Диагност"]["system_prompt"], контекст)
+            if результат:
                 st.session_state.lead_data["диагностика"] = результат
                 st.success("Диагностика завершена!")
                 st.markdown(результат)
+        else:
+            st.warning("Введите описание или загрузите файл.")
 
     if st.session_state.lead_data.get("диагностика"):
         st.subheader("Результаты диагностики:")
@@ -157,85 +168,65 @@ elif этап.startswith("2"):
 # ---------- ЭТАП 3: СТРАТЕГИЯ ----------
 elif этап.startswith("3"):
     st.header("🚀 Разработка стратегии")
-    st.write("На основе диагностики агент-стратег предложит решение.")
 
     if not st.session_state.lead_data.get("диагностика"):
         st.warning("Сначала проведите диагностику на этапе 2.")
-    else:
-        st.info("Будет использована ранее сохранённая диагностика.")
-        if st.button("Сгенерировать стратегию"):
-            with st.spinner("Стратег работает..."):
-                диагностика = st.session_state.lead_data["диагностика"]
-                результат = ask_agent(AGENTS["Стратег"]["system_prompt"], диагностика)
-                st.session_state.lead_data["стратегия"] = результат
-                st.success("Стратегия готова!")
-                st.markdown(результат)
+    elif st.button("Сгенерировать стратегию") and client:
+        результат = ask_agent(AGENTS["Стратег"]["system_prompt"], st.session_state.lead_data["диагностика"])
+        if результат:
+            st.session_state.lead_data["стратегия"] = результат
+            st.success("Стратегия готова!")
+            st.markdown(результат)
 
-        if st.session_state.lead_data.get("стратегия"):
-            st.subheader("Итоговая стратегия:")
-            st.markdown(st.session_state.lead_data["стратегия"])
+    if st.session_state.lead_data.get("стратегия"):
+        st.subheader("Итоговая стратегия:")
+        st.markdown(st.session_state.lead_data["стратегия"])
 
 # ---------- ЭТАП 4: ОТЧЕТ/ПРЕЗЕНТАЦИЯ ----------
 elif этап.startswith("4"):
     st.header("📊 Презентация и отчет")
-    st.write("Агент-репортер превратит стратегию в структурированный документ для клиента.")
-
     if not st.session_state.lead_data.get("стратегия"):
         st.warning("Сначала разработайте стратегию (этап 3).")
-    else:
-        if st.button("Создать отчёт"):
-            with st.spinner("Формирование отчёта..."):
-                стратегия = st.session_state.lead_data["стратегия"]
-                компания = st.session_state.lead_data["компания"] or "Клиент"
-                запрос = f"Компания: {компания}\n\nСтратегия:\n{стратегия}\n\nСформируй красивый отчёт."
-                результат = ask_agent(AGENTS["Репортер"]["system_prompt"], запрос)
-                st.session_state.lead_data["отчет"] = результат
-                st.success("Отчёт готов!")
-                st.markdown(результат)
-
-        if st.session_state.lead_data.get("отчет"):
-            st.subheader("Финальный отчёт:")
-            st.markdown(st.session_state.lead_data["отчет"])
+    elif st.button("Создать отчёт") and client:
+        результат = ask_agent(AGENTS["Репортер"]["system_prompt"],
+                              f"Компания: {st.session_state.lead_data.get('компания', '')} Стратегия: {st.session_state.lead_data['стратегия']}")
+        if результат:
+            st.session_state.lead_data["отчет"] = результат
+            st.success("Отчёт готов!")
+            st.markdown(результат)
+    if st.session_state.lead_data.get("отчет"):
+        st.subheader("Финальный отчёт:")
+        st.markdown(st.session_state.lead_data["отчет"])
 
 # ---------- ЭТАП 5: ВНЕДРЕНИЕ ----------
 elif этап.startswith("5"):
     st.header("⚙️ План внедрения")
-    st.write("Агент-внедренец создаст детальный план действий.")
-
     if not st.session_state.lead_data.get("стратегия"):
         st.warning("Сначала нужна стратегия (этап 3).")
-    else:
-        if st.button("Разработать план внедрения"):
-            with st.spinner("Строим дорожную карту..."):
-                стратегия = st.session_state.lead_data["стратегия"]
-                результат = ask_agent(AGENTS["Внедренец"]["system_prompt"], стратегия)
-                st.session_state.lead_data["план_внедрения"] = результат
-                st.success("План готов!")
-                st.markdown(результат)
-
-        if st.session_state.lead_data.get("план_внедрения"):
-            st.subheader("План внедрения:")
-            st.markdown(st.session_state.lead_data["план_внедрения"])
+    elif st.button("Разработать план внедрения") and client:
+        результат = ask_agent(AGENTS["Внедренец"]["system_prompt"], st.session_state.lead_data["стратегия"])
+        if результат:
+            st.session_state.lead_data["план_внедрения"] = результат
+            st.success("План готов!")
+            st.markdown(результат)
+    if st.session_state.lead_data.get("план_внедрения"):
+        st.subheader("План внедрения:")
+        st.markdown(st.session_state.lead_data["план_внедрения"])
 
 # ---------- ЭТАП 6: МОНИТОРИНГ ----------
 elif этап.startswith("6"):
     st.header("📈 Мониторинг и KPI")
-    st.write("Агент-контролёр предложит систему показателей для отслеживания успеха.")
-
     if not st.session_state.lead_data.get("стратегия"):
         st.warning("Сначала разработайте стратегию (этап 3).")
-    else:
-        if st.button("Сформировать систему KPI"):
-            with st.spinner("Анализ и подбор метрик..."):
-                стратегия = st.session_state.lead_data["стратегия"]
-                результат = ask_agent(AGENTS["Контролёр"]["system_prompt"], стратегия)
-                st.session_state.lead_data["мониторинг"] = результат
-                st.success("Метрики определены!")
-                st.markdown(результат)
-
-        if st.session_state.lead_data.get("мониторинг"):
-            st.subheader("Система мониторинга:")
-            st.markdown(st.session_state.lead_data["мониторинг"])
+    elif st.button("Сформировать систему KPI") and client:
+        результат = ask_agent(AGENTS["Контролёр"]["system_prompt"], st.session_state.lead_data["стратегия"])
+        if результат:
+            st.session_state.lead_data["мониторинг"] = результат
+            st.success("Метрики определены!")
+            st.markdown(результат)
+    if st.session_state.lead_data.get("мониторинг"):
+        st.subheader("Система мониторинга:")
+        st.markdown(st.session_state.lead_data["мониторинг"])
 
 # ---------- ПОДВАЛ ----------
 st.sidebar.markdown("---")
