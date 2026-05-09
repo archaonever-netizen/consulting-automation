@@ -38,7 +38,7 @@ if "lead_data" not in st.session_state:
     }
 
 # ---------- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЗАПРОСА К LLM ----------
-def ask_agent(system_prompt, user_message, model="llama3-70b-8192"):
+def ask_agent(system_prompt, user_message, model="llama-3.3-70b-versatile"):
     if not client:
         st.error("Сначала введите API‑ключ Groq в боковой панели.")
         return None
