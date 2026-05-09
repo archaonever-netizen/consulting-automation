@@ -1,46 +1,93 @@
 import streamlit as st
-import os
 from groq import Groq
 
-# ---------- НАСТРОЙКА ----------
-st.set_page_config(page_title="Консалтинг Автоматизация", layout="wide")
-st.title("🧠 Система консалтинговой компании с ИИ-агентами")
+# ---------- НАСТРОЙКА СТРАНИЦЫ ----------
+st.set_page_config(page_title="Консалтинг Презентация", layout="wide")
 
-# Храним API‑ключ в сессии, чтобы не вводить при каждом переключении этапа
+# ---------- CSS ДЛЯ ПРЕЗЕНТАЦИИ ----------
+st.markdown("""
+<style>
+    .presentation-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-radius: 20px;
+        padding: 30px 25px 25px 25px;
+        margin: 20px 0;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        border-left: 6px solid #1E3A8A;
+    }
+    .presentation-card h2 {
+        color: #1E3A8A;
+        font-size: 2em;
+        margin-top: 0;
+        border-bottom: 2px solid #1E3A8A30;
+        padding-bottom: 10px;
+    }
+    .presentation-card h3 {
+        color: #2563EB;
+        font-size: 1.4em;
+    }
+    .presentation-card p, .presentation-card li {
+        font-size: 1.1em;
+        line-height: 1.6;
+        color: #1F2937;
+    }
+    .presentation-card ul {
+        padding-left: 20px;
+    }
+    .presentation-card .highlight {
+        background: #DBEAFE;
+        padding: 15px;
+        border-radius: 12px;
+        margin: 15px 0;
+        font-weight: bold;
+    }
+    .slide-header {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+    .slide-icon {
+        font-size: 2.5rem;
+    }
+    .metrics-box {
+        background: #FFFFFF;
+        border-radius: 12px;
+        padding: 10px 15px;
+        display: inline-block;
+        margin: 5px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- ЗАГОЛОВОК ----------
+st.title("🌟 Система консалтинговой компании")
+st.markdown("### Ваш персональный ИИ-консультант с продающими презентациями", unsafe_allow_html=True)
+
+# ---------- КЛЮЧ API ----------
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = ""
 
-# Поле для ввода ключа в боковой панели
 st.sidebar.text_input(
-    "🔑 Введите ваш Groq API Key",
+    "🔑 Введите Groq API Key",
     type="password",
     key="api_key_input",
     on_change=lambda: st.session_state.update(groq_api_key=st.session_state.api_key_input or "")
 )
 
-# Создаём клиент только если ключ введён
 client = None
 if st.session_state.groq_api_key:
     client = Groq(api_key=st.session_state.groq_api_key)
 
-# ---------- ФОНД СЕССИИ ДЛЯ ДАННЫХ КЛИЕНТА ----------
+# ---------- ДАННЫЕ СЕССИИ ----------
 if "lead_data" not in st.session_state:
-    st.session_state.lead_data = {
-        "компания": "",
-        "контакт": "",
-        "потребности": "",
-        "бюджет": "",
-        "сроки": "",
-        "диагностика": "",
-        "стратегия": "",
-        "отчет": "",
-        "план_внедрения": ""
-    }
+    st.session_state.lead_data = {}
 
-# ---------- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЗАПРОСА К LLM ----------
+# ---------- ФУНКЦИЯ ЗАПРОСА К LLM ----------
 def ask_agent(system_prompt, user_message, model="llama-3.3-70b-versatile"):
     if not client:
-        st.error("Сначала введите API‑ключ Groq в боковой панели.")
+        st.error("Введите API‑ключ в боковой панели.")
         return None
     messages = [
         {"role": "system", "content": system_prompt},
@@ -54,184 +101,178 @@ def ask_agent(system_prompt, user_message, model="llama-3.3-70b-versatile"):
     )
     return response.choices[0].message.content
 
-# ---------- АГЕНТЫ (СИСТЕМНЫЕ ПРОМПТЫ И НАВЫКИ) ----------
+# ---------- ФОРМАТИРОВАНИЕ ВЫВОДА КАК ПРЕЗЕНТАЦИЯ ----------
+def display_presentation(title, content, icon=""):
+    """Оборачивает ответ агента в красивую карточку."""
+    if not content:
+        return
+    # Заменяем Markdown на HTML с сохранением структуры
+    html_content = content.replace("\n", "<br>")
+    # Простая замена **жирного** на <b>
+    html_content = html_content.replace("**", "<b>", 1).replace("**", "</b>", 1) if "**" in html_content else html_content
+    # Создаём карточку
+    st.markdown(f"""
+    <div class="presentation-card">
+        <div class="slide-header">
+            <span class="slide-icon">{icon}</span>
+            <h2>{title}</h2>
+        </div>
+        <div>{html_content}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ---------- АГЕНТЫ (СИСТЕМНЫЕ ПРОМПТЫ) ----------
 AGENTS = {
     "Квалификатор": {
-        "system_prompt": """Ты — эксперт по квалификации клиентов в консалтинге.
-Твои навыки: активное слушание, выявление потребностей, SPIN-продажи.
-Твои знания: критерии оценки лидов, типология клиентов, BANT (бюджет, полномочия, потребность, сроки).
-Твой подход: задавай открытые вопросы, резюмируй ответы, определи потенциал сделки.
-В конце дай оценку: горячий / теплый / холодный лид и почему."""
+        "prompt": """Ты — эксперт по квалификации клиентов. Оценивай лид, используй SPIN-продажи, BANT.
+        Ответ оформи в виде продающего резюме: выдели потенциал, риски, предложи следующий шаг. Используй маркированные списки, подзаголовки."""
     },
     "Диагност": {
-        "system_prompt": """Ты — бизнес-аналитик в консалтинге.
-Навыки: глубинный анализ, SWOT, PESTLE, root-cause analysis, интервьюирование.
-Знания: отраслевые модели, бенчмаркинг, методика 5 почему.
-Подход: изучай ситуацию структурно, выделяй ключевые проблемы и возможности.
-На основе предоставленных данных выдай развернутую диагностику с выводами."""
+        "prompt": """Ты — бизнес-аналитик. Проведи SWOT-анализ, выяви корневые проблемы, используй методику 5 почему.
+        Представь результат как консалтинговый отчёт с разделами: Ключевые выводы, SWOT, Корневые причины."""
     },
     "Стратег": {
-        "system_prompt": """Ты — стратегический консультант.
-Навыки: стратегическое мышление, дизайн-мышление, приоритезация, дорожные карты.
-Знания: матрица BCG, голубой океан, OKR, модель 7S.
-Подход: генерируй 2-3 сценария развития, оценивай риски и выгоды, предлагай оптимальный путь.
-На основе диагностики разработай стратегические рекомендации."""
+        "prompt": """Ты — стратегический консультант. Разработай 2-3 сценария, оцени риски, предложи дорожную карту.
+        Ответ должен содержать заголовки сценариев, плюсы/минусы, рекомендованный путь."""
     },
     "Репортер": {
-        "system_prompt": """Ты — мастер презентаций и отчетов в консалтинге.
-Навыки: сторителлинг, визуальное мышление, структурирование информации.
-Знания: принципы MECE, пирамида Минто, формат executive summary.
-Подход: преврати стратегию в понятный отчет для клиента с заголовками, ключевыми тезисами и графикой (описанием графиков). Используй Markdown."""
+        "prompt": """Ты — мастер презентаций. Преврати стратегию в структурированный документ для клиента.
+        Используй подзаголовки, ключевые тезисы, выделяй главное. Стиль — продающий и убедительный."""
     },
     "Внедренец": {
-        "system_prompt": """Ты — руководитель проектов по внедрению изменений.
-Навыки: проектное управление, agile/scrum, управление изменениями.
-Знания: ADKAR-модель, PMBOK, цикл Деминга.
-Подход: создай пошаговый план с действиями, сроками, ответственными и контрольными точками. Учти сопротивление изменениям."""
+        "prompt": """Ты — руководитель проектов. Составь подробный план внедрения с этапами, сроками, ответственными.
+        Оформи как чек-лист с контрольными точками."""
     },
     "Контролёр": {
-        "system_prompt": """Ты — специалист по мониторингу эффективности.
-Навыки: KPI-дизайн, сбор обратной связи, аналитика данных.
-Знания: SMART-цели, balanced scorecard, метрики консалтинговых проектов.
-Подход: определи 3-5 ключевых показателей для отслеживания результатов стратегии и предложи формат регулярного отчета."""
+        "prompt": """Ты — специалист по KPI. Определи 3-5 SMART-показателей для мониторинга успеха стратегии.
+        Предложи формат ежемесячного отчёта."""
     }
 }
 
-# ---------- БОКОВАЯ ПАНЕЛЬ: НАВИГАЦИЯ ПО ЭТАПАМ ----------
-st.sidebar.title("Этапы работы с клиентом")
+# ---------- БОКОВАЯ ПАНЕЛЬ ----------
+st.sidebar.title("📋 Этапы работы")
 этап = st.sidebar.radio(
-    "Перейти к этапу:",
-    ["1. Квалификация лида",
-     "2. Диагностика",
-     "3. Стратегия",
-     "4. Презентация/Отчет",
-     "5. Внедрение",
-     "6. Мониторинг"]
+    "Выберите этап",
+    ["1. Квалификация лида", "2. Диагностика", "3. Стратегия",
+     "4. Презентация/Отчет", "5. Внедрение", "6. Мониторинг",
+     "📊 Полная презентация для клиента"]
 )
 
-# ---------- ЭТАП 1: КВАЛИФИКАЦИЯ ----------
+# ---------- ЭТАП 1 ----------
 if этап.startswith("1"):
     st.header("🎯 Квалификация лида")
-    st.write("Агент-квалификатор поможет вам задать правильные вопросы и оценить потенциал.")
-
     with st.form("lead_form"):
-        компания = st.text_input("Название компании клиента", value=st.session_state.lead_data["компания"])
-        контакт = st.text_input("Контактное лицо", value=st.session_state.lead_data["контакт"])
-        запрос = st.text_area("Опишите первичный запрос или результаты разговора", value=st.session_state.lead_data["потребности"])
-        submitted = st.form_submit_button("Передать агенту на квалификацию")
+        компания = st.text_input("Компания", value=st.session_state.lead_data.get("компания", ""))
+        контакт = st.text_input("Контакт", value=st.session_state.lead_data.get("контакт", ""))
+        запрос = st.text_area("Описание запроса", value=st.session_state.lead_data.get("потребности", ""))
+        if st.form_submit_button("Запустить квалификацию") and client:
+            user_msg = f"Компания: {компания}. Контакт: {контакт}. Запрос: {запрос}"
+            res = ask_agent(AGENTS["Квалификатор"]["prompt"], user_msg)
+            if res:
+                st.session_state.lead_data.update(компания=компания, контакт=контакт, потребности=запрос, квалификация=res)
+                display_presentation("Квалификация лида", res, "🔍")
 
-    if submitted and client:
-        user_msg = f"Компания: {компания}. Контакт: {контакт}. Запрос: {запрос}"
-        результат = ask_agent(AGENTS["Квалификатор"]["system_prompt"], user_msg)
-        if результат:
-            st.session_state.lead_data["компания"] = компания
-            st.session_state.lead_data["контакт"] = контакт
-            st.session_state.lead_data["потребности"] = запрос
-            st.session_state.lead_data["квалификация"] = результат
-            st.success("Готово! Результат ниже:")
-            st.markdown(результат)
+    if "квалификация" in st.session_state.lead_data:
+        display_presentation("Квалификация лида (сохранено)", st.session_state.lead_data["квалификация"], "🔍")
 
-    if st.session_state.lead_data.get("квалификация"):
-        st.subheader("Результат квалификации:")
-        st.markdown(st.session_state.lead_data["квалификация"])
-
-# ---------- ЭТАП 2: ДИАГНОСТИКА ----------
+# ---------- ЭТАП 2 ----------
 elif этап.startswith("2"):
-    st.header("🔍 Диагностика")
-    st.write("Предоставьте информацию о ситуации клиента для агента-аналитика.")
-
-    контекст = st.text_area(
-        "Опишите текущую ситуацию, симптомы, цифры, рыночные условия",
-        value=st.session_state.lead_data.get("диагностика_input", ""),
-        height=200
-    )
-    загруженный_файл = st.file_uploader("Или загрузите файл (txt, csv, pdf пока не поддерживается)", type=["txt"])
-
-    if st.button("Запустить диагностику") and client:
-        if загруженный_файл:
-            контент = загруженный_файл.read().decode("utf-8", errors="ignore")
-            контекст += "\n\n[Содержимое файла]:\n" + контент
+    st.header("🔎 Диагностика")
+    контекст = st.text_area("Введите данные о ситуации клиента", height=200,
+                            value=st.session_state.lead_data.get("диагностика_input", ""))
+    файл = st.file_uploader("Загрузить txt-файл", type=["txt"])
+    if st.button("Провести диагностику") and client:
+        if файл:
+            контент = файл.read().decode("utf-8", errors="ignore")
+            контекст += "\n\n[Файл]:\n" + контент
         if контекст.strip():
             st.session_state.lead_data["диагностика_input"] = контекст
-            результат = ask_agent(AGENTS["Диагност"]["system_prompt"], контекст)
-            if результат:
-                st.session_state.lead_data["диагностика"] = результат
-                st.success("Диагностика завершена!")
-                st.markdown(результат)
+            res = ask_agent(AGENTS["Диагност"]["prompt"], контекст)
+            if res:
+                st.session_state.lead_data["диагностика"] = res
+                display_presentation("Диагностика бизнеса", res, "📈")
         else:
-            st.warning("Введите описание или загрузите файл.")
+            st.warning("Введите текст или загрузите файл.")
+    if "диагностика" in st.session_state.lead_data:
+        display_presentation("Диагностика бизнеса (сохранено)", st.session_state.lead_data["диагностика"], "📈")
 
-    if st.session_state.lead_data.get("диагностика"):
-        st.subheader("Результаты диагностики:")
-        st.markdown(st.session_state.lead_data["диагностика"])
-
-# ---------- ЭТАП 3: СТРАТЕГИЯ ----------
+# ---------- ЭТАП 3 ----------
 elif этап.startswith("3"):
-    st.header("🚀 Разработка стратегии")
+    st.header("🚀 Стратегия")
+    if "диагностика" not in st.session_state.lead_data:
+        st.warning("Сначала выполните диагностику.")
+    elif st.button("Разработать стратегию") and client:
+        res = ask_agent(AGENTS["Стратег"]["prompt"], st.session_state.lead_data["диагностика"])
+        if res:
+            st.session_state.lead_data["стратегия"] = res
+            display_presentation("Стратегия развития", res, "🎯")
+    if "стратегия" in st.session_state.lead_data:
+        display_presentation("Стратегия развития (сохранено)", st.session_state.lead_data["стратегия"], "🎯")
 
-    if not st.session_state.lead_data.get("диагностика"):
-        st.warning("Сначала проведите диагностику на этапе 2.")
-    elif st.button("Сгенерировать стратегию") and client:
-        результат = ask_agent(AGENTS["Стратег"]["system_prompt"], st.session_state.lead_data["диагностика"])
-        if результат:
-            st.session_state.lead_data["стратегия"] = результат
-            st.success("Стратегия готова!")
-            st.markdown(результат)
-
-    if st.session_state.lead_data.get("стратегия"):
-        st.subheader("Итоговая стратегия:")
-        st.markdown(st.session_state.lead_data["стратегия"])
-
-# ---------- ЭТАП 4: ОТЧЕТ/ПРЕЗЕНТАЦИЯ ----------
+# ---------- ЭТАП 4 ----------
 elif этап.startswith("4"):
-    st.header("📊 Презентация и отчет")
-    if not st.session_state.lead_data.get("стратегия"):
-        st.warning("Сначала разработайте стратегию (этап 3).")
-    elif st.button("Создать отчёт") and client:
-        результат = ask_agent(AGENTS["Репортер"]["system_prompt"],
-                              f"Компания: {st.session_state.lead_data.get('компания', '')} Стратегия: {st.session_state.lead_data['стратегия']}")
-        if результат:
-            st.session_state.lead_data["отчет"] = результат
-            st.success("Отчёт готов!")
-            st.markdown(результат)
-    if st.session_state.lead_data.get("отчет"):
-        st.subheader("Финальный отчёт:")
-        st.markdown(st.session_state.lead_data["отчет"])
+    st.header("📊 Презентация / Отчёт")
+    if "стратегия" not in st.session_state.lead_data:
+        st.warning("Сначала создайте стратегию.")
+    elif st.button("Сгенерировать отчёт") and client:
+        компания = st.session_state.lead_data.get("компания", "Клиент")
+        res = ask_agent(AGENTS["Репортер"]["prompt"], f"Компания: {компания}\nСтратегия:\n{st.session_state.lead_data['стратегия']}")
+        if res:
+            st.session_state.lead_data["отчет"] = res
+            display_presentation("Продающая презентация для клиента", res, "📑")
+    if "отчет" in st.session_state.lead_data:
+        display_presentation("Продающая презентация (сохранено)", st.session_state.lead_data["отчет"], "📑")
 
-# ---------- ЭТАП 5: ВНЕДРЕНИЕ ----------
+# ---------- ЭТАП 5 ----------
 elif этап.startswith("5"):
     st.header("⚙️ План внедрения")
-    if not st.session_state.lead_data.get("стратегия"):
-        st.warning("Сначала нужна стратегия (этап 3).")
-    elif st.button("Разработать план внедрения") and client:
-        результат = ask_agent(AGENTS["Внедренец"]["system_prompt"], st.session_state.lead_data["стратегия"])
-        if результат:
-            st.session_state.lead_data["план_внедрения"] = результат
-            st.success("План готов!")
-            st.markdown(результат)
-    if st.session_state.lead_data.get("план_внедрения"):
-        st.subheader("План внедрения:")
-        st.markdown(st.session_state.lead_data["план_внедрения"])
+    if "стратегия" not in st.session_state.lead_data:
+        st.warning("Сначала нужна стратегия.")
+    elif st.button("Создать план внедрения") and client:
+        res = ask_agent(AGENTS["Внедренец"]["prompt"], st.session_state.lead_data["стратегия"])
+        if res:
+            st.session_state.lead_data["план_внедрения"] = res
+            display_presentation("Детальный план действий", res, "📌")
+    if "план_внедрения" in st.session_state.lead_data:
+        display_presentation("План внедрения (сохранено)", st.session_state.lead_data["план_внедрения"], "📌")
 
-# ---------- ЭТАП 6: МОНИТОРИНГ ----------
+# ---------- ЭТАП 6 ----------
 elif этап.startswith("6"):
     st.header("📈 Мониторинг и KPI")
-    if not st.session_state.lead_data.get("стратегия"):
-        st.warning("Сначала разработайте стратегию (этап 3).")
-    elif st.button("Сформировать систему KPI") and client:
-        результат = ask_agent(AGENTS["Контролёр"]["system_prompt"], st.session_state.lead_data["стратегия"])
-        if результат:
-            st.session_state.lead_data["мониторинг"] = результат
-            st.success("Метрики определены!")
-            st.markdown(результат)
-    if st.session_state.lead_data.get("мониторинг"):
-        st.subheader("Система мониторинга:")
-        st.markdown(st.session_state.lead_data["мониторинг"])
+    if "стратегия" not in st.session_state.lead_data:
+        st.warning("Сначала разработайте стратегию.")
+    elif st.button("Определить KPI") and client:
+        res = ask_agent(AGENTS["Контролёр"]["prompt"], st.session_state.lead_data["стратегия"])
+        if res:
+            st.session_state.lead_data["мониторинг"] = res
+            display_presentation("Система ключевых показателей", res, "📉")
+    if "мониторинг" in st.session_state.lead_data:
+        display_presentation("KPI (сохранено)", st.session_state.lead_data["мониторинг"], "📉")
+
+# ---------- ПОЛНАЯ ПРЕЗЕНТАЦИЯ ----------
+elif этап == "📊 Полная презентация для клиента":
+    st.header("🧾 Итоговая презентация для клиента")
+    if not any(k in st.session_state.lead_data for k in ["квалификация", "диагностика", "стратегия"]):
+        st.info("Пройдите хотя бы первые три этапа, чтобы собрать презентацию.")
+    else:
+        st.markdown("### Ниже собраны все результаты в едином стиле. Можно скроллить или распечатать.")
+        # Кнопка для печати (открывает диалог браузера)
+        st.markdown("<script>function printPage() { window.print(); }</script>", unsafe_allow_html=True)
+        st.button("🖨️ Распечатать презентацию", on_click=lambda: st.markdown("<script>printPage()</script>", unsafe_allow_html=True))
+
+        if "квалификация" in st.session_state.lead_data:
+            display_presentation("1. Квалификация лида", st.session_state.lead_data["квалификация"], "🔍")
+        if "диагностика" in st.session_state.lead_data:
+            display_presentation("2. Диагностика", st.session_state.lead_data["диагностика"], "📈")
+        if "стратегия" in st.session_state.lead_data:
+            display_presentation("3. Стратегия", st.session_state.lead_data["стратегия"], "🎯")
+        if "отчет" in st.session_state.lead_data:
+            display_presentation("4. Финальный отчёт", st.session_state.lead_data["отчет"], "📑")
+        if "план_внедрения" in st.session_state.lead_data:
+            display_presentation("5. План внедрения", st.session_state.lead_data["план_внедрения"], "📌")
+        if "мониторинг" in st.session_state.lead_data:
+            display_presentation("6. KPI и мониторинг", st.session_state.lead_data["мониторинг"], "📉")
 
 # ---------- ПОДВАЛ ----------
 st.sidebar.markdown("---")
-st.sidebar.info(
-    "Все данные хранятся только в рамках вашей сессии. "
-    "Для реального использования добавьте базу данных.\n\n"
-    "Разработано на Streamlit + Groq (Llama 3)."
-)
+st.sidebar.info("Все данные сессии будут потеряны при обновлении страницы. Для постоянного хранения подключите базу данных.")
